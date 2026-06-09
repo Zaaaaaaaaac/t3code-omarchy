@@ -2719,6 +2719,7 @@ export default function ChatView(props: ChatViewProps) {
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
+      composerRef.current?.resetVoiceInputTranscript("");
       await onSubmitPlanFollowUp({
         text: followUp.text,
         interactionMode: followUp.interactionMode,
@@ -2734,6 +2735,7 @@ export default function ChatView(props: ChatViewProps) {
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
+      composerRef.current?.resetVoiceInputTranscript("");
       return;
     }
     if (!hasSendableContent) {
@@ -2841,6 +2843,7 @@ export default function ChatView(props: ChatViewProps) {
     promptRef.current = "";
     clearComposerDraftContent(composerDraftTarget);
     composerRef.current?.resetCursorState();
+    composerRef.current?.resetVoiceInputTranscript("");
 
     let turnStartSucceeded = false;
     await (async () => {
@@ -2964,6 +2967,7 @@ export default function ChatView(props: ChatViewProps) {
           prompt: promptForSend,
           detectTrigger: true,
         });
+        composerRef.current?.resetVoiceInputTranscript(promptForSend);
       }
       setThreadError(
         threadIdForSend,

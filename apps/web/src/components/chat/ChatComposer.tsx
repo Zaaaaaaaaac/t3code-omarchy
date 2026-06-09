@@ -76,6 +76,7 @@ import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { searchSlashCommandItems } from "./composerSlashCommandSearch";
+import { useComposerVoiceInput } from "./useComposerVoiceInput";
 import {
   getComposerProviderState,
   renderProviderTraitsMenuContent,
@@ -91,7 +92,14 @@ import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Toggle } from "../ui/toggle";
 import { toastManager } from "../ui/toast";
-import { BotIcon, CircleAlertIcon, LetterTextIcon, ListTodoIcon, XIcon } from "lucide-react";
+import {
+  BotIcon,
+  CircleAlertIcon,
+  LetterTextIcon,
+  ListTodoIcon,
+  MicIcon,
+  XIcon,
+} from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
 import { getProviderInteractionModeToggle } from "../../providerModels";
 import {
@@ -291,6 +299,8 @@ export interface ChatComposerHandle {
     prompt?: string;
     detectTrigger?: boolean;
   }) => void;
+  /** Reset in-progress voice transcription after the draft is externally cleared/restored. */
+  resetVoiceInputTranscript: (basePrompt?: string) => void;
   /** Insert a terminal context from the terminal drawer. */
   addTerminalContext: (selection: TerminalContextSelection) => void;
   /** Get the current prompt/effort/model state for use in send. */
@@ -1014,6 +1024,42 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     },
     [composerDraftTarget, setComposerDraftPrompt],
   );
+
+  const setPromptFromVoiceInput = useCallback(
+    (nextPrompt: string) => {
+      if (nextPrompt === promptRef.current) return;
+      promptRef.current = nextPrompt;
+      setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      const nextCursor = collapseExpandedComposerCursor(nextPrompt, nextPrompt.length);
+      setComposerCursor(nextCursor);
+      setComposerTrigger(detectComposerTrigger(nextPrompt, nextPrompt.length));
+      setComposerHighlightedItemId(null);
+      scheduleComposerFocus();
+    },
+    [composerDraftTarget, promptRef, scheduleComposerFocus, setComposerDraftPrompt],
+  );
+
+  const isVoiceInputUnavailable =
+    isConnecting ||
+    isComposerApprovalState ||
+    activePendingProgress !== null ||
+    environmentUnavailable !== null;
+  const voiceInput = useComposerVoiceInput({
+    disabled: isVoiceInputUnavailable,
+    whisperLiveWsUrl: settings.voiceInputWhisperLiveWsUrl,
+    getPrompt: () => promptRef.current,
+    onPromptChange: setPromptFromVoiceInput,
+  });
+  const voiceInputTooltip =
+    voiceInput.status === "connecting"
+      ? "Connecting microphone..."
+      : voiceInput.isListening
+        ? "Stop voice input"
+        : voiceInput.status === "error" && voiceInput.errorMessage
+          ? voiceInput.errorMessage
+          : "Start voice input";
+  const isComposerInputLockedByVoice =
+    voiceInput.isListening && !isComposerApprovalState && activePendingProgress === null;
 
   const addComposerImage = useCallback(
     (image: ComposerImageAttachment) => {
@@ -1906,6 +1952,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             : null,
         );
       },
+      resetVoiceInputTranscript: (basePrompt?: string) => {
+        voiceInput.resetTranscript(basePrompt);
+      },
       addTerminalContext: (selection: TerminalContextSelection) => {
         if (!activeThread) return;
         const snapshot = composerEditorRef.current?.readSnapshot() ?? {
@@ -1970,6 +2019,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedPromptEffort,
       selectedProvider,
       selectedProviderModels,
+      voiceInput,
     ],
   );
 
@@ -2284,7 +2334,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             activePendingApproval === null ? (
               <div className="mb-2">
                 <ComposerRichDraftToolbar
-                  disabled={isConnecting || environmentUnavailable !== null}
+                  disabled={
+                    isConnecting || environmentUnavailable !== null || isComposerInputLockedByVoice
+                  }
                   onApplyFormat={onApplyRichDraftFormat}
                 />
               </div>
@@ -2332,6 +2384,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 disabled={
                   isConnecting ||
                   isComposerApprovalState ||
+                  isComposerInputLockedByVoice ||
                   (environmentUnavailable !== null && activePendingProgress === null)
                 }
               />
@@ -2446,29 +2499,60 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
               >
                 {!activePendingApproval ? (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Toggle
-                          pressed={richDraftMode}
-                          onPressedChange={setRichDraftMode}
-                          aria-label={
-                            richDraftMode ? "Disable rich draft mode" : "Enable rich draft mode"
-                          }
-                          variant="outline"
-                          size={pendingPrimaryAction ? "sm" : "default"}
-                          className="rounded-full border-border/60 bg-background/80 text-muted-foreground/80 shadow-xs/5 hover:bg-background hover:text-foreground data-pressed:border-primary/35 data-pressed:bg-primary/10 data-pressed:text-foreground"
-                        >
-                          <LetterTextIcon className="size-3.5" />
-                        </Toggle>
-                      }
-                    />
-                    <TooltipPopup side="top">
-                      {richDraftMode
-                        ? "Rich draft on, Enter adds a new line"
-                        : "Rich draft off, Enter sends"}
-                    </TooltipPopup>
-                  </Tooltip>
+                  <>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size={pendingPrimaryAction ? "sm" : "default"}
+                            aria-label={
+                              voiceInput.isListening ? "Stop voice input" : "Start voice input"
+                            }
+                            aria-pressed={voiceInput.isListening}
+                            disabled={isVoiceInputUnavailable && !voiceInput.isListening}
+                            className={cn(
+                              "rounded-full border-border/60 bg-background/80 text-muted-foreground/80 shadow-xs/5 hover:bg-background hover:text-foreground",
+                              voiceInput.isListening &&
+                                "border-rose-500/45 bg-rose-500/15 text-rose-500 hover:bg-rose-500/20 hover:text-rose-500",
+                            )}
+                            onPointerDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              voiceInput.toggle();
+                              scheduleComposerFocus();
+                            }}
+                          >
+                            <MicIcon className="size-3.5" />
+                          </Button>
+                        }
+                      />
+                      <TooltipPopup side="top">{voiceInputTooltip}</TooltipPopup>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Toggle
+                            pressed={richDraftMode}
+                            onPressedChange={setRichDraftMode}
+                            aria-label={
+                              richDraftMode ? "Disable rich draft mode" : "Enable rich draft mode"
+                            }
+                            variant="outline"
+                            size={pendingPrimaryAction ? "sm" : "default"}
+                            className="rounded-full border-border/60 bg-background/80 text-muted-foreground/80 shadow-xs/5 hover:bg-background hover:text-foreground data-pressed:border-primary/35 data-pressed:bg-primary/10 data-pressed:text-foreground"
+                          >
+                            <LetterTextIcon className="size-3.5" />
+                          </Toggle>
+                        }
+                      />
+                      <TooltipPopup side="top">
+                        {richDraftMode
+                          ? "Rich draft on, Enter adds a new line"
+                          : "Rich draft off, Enter sends"}
+                      </TooltipPopup>
+                    </Tooltip>
+                  </>
                 ) : null}
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
