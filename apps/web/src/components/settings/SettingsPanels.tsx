@@ -412,6 +412,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
+      ...(settings.voiceInputWhisperLiveWsUrl !==
+      DEFAULT_UNIFIED_SETTINGS.voiceInputWhisperLiveWsUrl
+        ? ["Voice input server"]
+        : []),
       ...(Duration.toMillis(settings.automaticGitFetchInterval) !==
       Duration.toMillis(DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval)
         ? ["Automatic Git fetch interval"]
@@ -442,6 +446,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.diffWordWrap,
       settings.automaticGitFetchInterval,
       settings.enableAssistantStreaming,
+      settings.voiceInputWhisperLiveWsUrl,
       settings.sidebarThreadPreviewCount,
       settings.timestampFormat,
       theme,
@@ -467,6 +472,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
+      voiceInputWhisperLiveWsUrl: DEFAULT_UNIFIED_SETTINGS.voiceInputWhisperLiveWsUrl,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
@@ -697,6 +703,35 @@ export function GeneralSettingsPanel() {
                 updateSettings({ enableAssistantStreaming: Boolean(checked) })
               }
               aria-label="Stream assistant messages"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Voice input server"
+          description="WhisperLive WebSocket URL used by the microphone button."
+          resetAction={
+            settings.voiceInputWhisperLiveWsUrl !==
+            DEFAULT_UNIFIED_SETTINGS.voiceInputWhisperLiveWsUrl ? (
+              <SettingResetButton
+                label="voice input server"
+                onClick={() =>
+                  updateSettings({
+                    voiceInputWhisperLiveWsUrl:
+                      DEFAULT_UNIFIED_SETTINGS.voiceInputWhisperLiveWsUrl,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <DraftInput
+              className="w-full sm:w-72"
+              value={settings.voiceInputWhisperLiveWsUrl}
+              onCommit={(next) => updateSettings({ voiceInputWhisperLiveWsUrl: next })}
+              placeholder="ws://127.0.0.1:9090"
+              spellCheck={false}
+              aria-label="WhisperLive WebSocket URL"
             />
           }
         />
